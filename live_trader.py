@@ -25,6 +25,7 @@ from trading.alpaca_client import (
     get_account_equity,
     get_last_60_stock_bars, # Ensure this uses the 'end' parameter as shown below
     has_open_position,
+    is_us_equity_market_open,
     submit_stock_bracket_order,
 )
 from trading.signal_engine import (
@@ -49,6 +50,20 @@ def resolve_device(device_arg: str) -> torch.device:
             raise RuntimeError("CUDA requested but not available.")
         return torch.device("cuda")
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def seconds_until_next_open(next_open) -> int:
+    if next_open is None:
+        return 300
+
+    next_open_ts = pd.Timestamp(next_open)
+    if next_open_ts.tzinfo is None:
+        next_open_ts = next_open_ts.tz_localize("UTC")
+    else:
+        next_open_ts = next_open_ts.tz_convert("UTC")
+
+    now_utc = pd.Timestamp.now(tz="UTC")
+    return max(30, int((next_open_ts - now_utc).total_seconds()))
 
 
 def decide_trade_from_model(
@@ -131,6 +146,17 @@ def live_paper_loop(
 
     while True:
         try:
+            market_open, next_open = is_us_equity_market_open()
+            if not market_open:
+                wait_secs = min(seconds_until_next_open(next_open), 30 * 60)
+                if next_open is not None:
+                    print(f"U.S. equity market is closed. Next open: {next_open}. Sleeping {wait_secs}s...")
+                else:
+                    print(f"U.S. equity market is closed. Sleeping {wait_secs}s...")
+                last_bar_time = None
+                time.sleep(wait_secs)
+                continue
+
             # 1. Fetch data with explicit awareness of current time
             # Ensure your get_last_60_stock_bars uses 'end=datetime.now(timezone.utc)'
             df = get_last_60_stock_bars(SYMBOL, lookback_bars=CONTEXT_SIZE + 5)
