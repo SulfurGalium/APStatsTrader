@@ -1,0 +1,6 @@
+alpaca-py
+fredapi
+joblib
+numpy
+pandas
+scikit-learn

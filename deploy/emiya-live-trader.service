@@ -1,0 +1,22 @@
+[Unit]
+Description=Emiya live paper trading bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=emiya
+Group=emiya
+WorkingDirectory=/opt/emiya/Emiya1
+EnvironmentFile=/etc/emiya/live-trader.env
+ExecStart=/opt/emiya/Emiya1/.venv/bin/python live_trader.py
+Restart=always
+RestartSec=15
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# Keep secrets and project files private to the service user.
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
