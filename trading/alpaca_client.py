@@ -46,6 +46,25 @@ def get_stock_data_client() -> StockHistoricalDataClient:
     return stock_data_client
 
 
+def get_market_clock():
+    """
+    Return Alpaca's U.S. equity market clock.
+    """
+    return get_trading_client().get_clock()
+
+
+def is_us_equity_market_open() -> tuple[bool, Optional[datetime]]:
+    """
+    Check whether regular U.S. equity trading is currently open.
+
+    SPY trades on the U.S. equity market, so Alpaca's market clock is the
+    source of truth for whether the live loop should process bars and orders.
+    """
+    clock = get_market_clock()
+    next_open = getattr(clock, "next_open", None)
+    return bool(getattr(clock, "is_open", False)), next_open
+
+
 def wait_for_fill(order_id: str, timeout: int = 30) -> float:
     """
     Wait until order is filled and return filled quantity (paper account).
