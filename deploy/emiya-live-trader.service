@@ -9,7 +9,8 @@ User=emiya
 Group=emiya
 WorkingDirectory=/opt/emiya/Emiya1
 EnvironmentFile=/etc/emiya/live-trader.env
-ExecStart=/opt/emiya/Emiya1/.venv/bin/python live_trader.py
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/emiya/Emiya1/.venv/bin/python -u live_trader.py
 Restart=always
 RestartSec=15
 KillSignal=SIGINT
