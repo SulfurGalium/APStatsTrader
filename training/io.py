@@ -3,6 +3,7 @@ from __future__ import annotations
 import joblib
 import torch
 
+from config import BETA_SCHEDULE
 from models.diffusion import Conv1dDenoiser, TimeSeriesDiffusion
 
 
@@ -43,7 +44,8 @@ def load_model_and_scaler(
     ckpt = torch.load(model_path, map_location=device)
 
     diffusion_steps = ckpt.get("diffusion_steps", 50)
-    beta_schedule = "cosine" if use_cosine_beta else "linear"
+    saved_beta_schedule = ckpt.get("beta_schedule") or BETA_SCHEDULE
+    beta_schedule = "cosine" if use_cosine_beta or saved_beta_schedule == "cosine" else "linear"
     hidden_dim = ckpt.get("hidden_dim", 256)
     feature_dim = ckpt.get("feature_dim", feature_dim)
     context_size = ckpt.get("context_size", context_size)
@@ -72,4 +74,8 @@ def load_model_and_scaler(
     model.eval()
 
     scaler = joblib.load(scaler_path)
+    print(
+        f"Loaded model {model_path}: feature_dim={feature_dim}, context_size={context_size}, "
+        f"horizon_size={horizon_size}, diffusion_steps={diffusion_steps}, beta_schedule={beta_schedule}"
+    )
     return model, scaler
