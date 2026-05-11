@@ -30,7 +30,7 @@ from trading.alpaca_client import (
 )
 from trading.signal_engine import (
     build_processed_features,
-    derive_trade_plan,
+    evaluate_trade_plan,
     sample_return_distribution,
 )
 from training.io import load_model_and_scaler
@@ -76,12 +76,13 @@ def decide_trade_from_model(
     equity: float,
     ema_span: int,
     momentum_weight: float,
-) -> Tuple[Optional[str], Optional[int], Optional[float], Optional[float]]:
+) -> Tuple[Optional[str], Optional[int], Optional[float], Optional[float], str]:
     features, _, aligned_raw = build_live_features(df_raw, feature_cols)
     
     if len(features) < context_size:
-        print(f"Data padding: {len(features)}/{context_size}")
-        return None, None, None, None
+        reason = f"data padding: {len(features)}/{context_size} processed rows"
+        print(f"[NO SIGNAL] {reason}")
+        return None, None, None, None, reason
 
     scaled = scaler.transform(features)
     context = scaled[-context_size:]
@@ -97,7 +98,7 @@ def decide_trade_from_model(
     current_price = float(aligned_raw["Close"].iloc[-1])
     ema_val = float(aligned_raw["Close"].ewm(span=ema_span, adjust=False).mean().iloc[-1])
     
-    trade_plan = derive_trade_plan(
+    trade_plan, rejection_reason = evaluate_trade_plan(
         mu=mu,
         sigma=sigma,
         current_price=current_price,
@@ -108,15 +109,21 @@ def decide_trade_from_model(
         momentum_weight=momentum_weight,
     )
 
+    print(
+        f"[MODEL] price={current_price:.2f} ema={ema_val:.2f} "
+        f"mu={mu:.6f} sigma={sigma:.6f}"
+    )
+
     if trade_plan is None:
-        return None, None, None, None
+        print(f"[NO SIGNAL] {rejection_reason}")
+        return None, None, None, None, rejection_reason
 
     print(
         f"[SIGNAL] {trade_plan.side} | Qty: {trade_plan.qty} | "
         f"Entry: {trade_plan.current_price:.2f} | TP: {trade_plan.target_price:.2f} | "
         f"SL: {trade_plan.stop_price:.2f}"
     )
-    return trade_plan.side, trade_plan.qty, trade_plan.target_price, trade_plan.stop_price
+    return trade_plan.side, trade_plan.qty, trade_plan.target_price, trade_plan.stop_price, "accepted"
 
 
 def live_paper_loop(
@@ -174,6 +181,16 @@ def live_paper_loop(
 
             bar_time = df.index[-1]
             now_utc = pd.Timestamp.now(tz="UTC")
+            bar_age = now_utc - bar_time
+            max_initial_bar_age = bar_interval + pd.Timedelta(minutes=20)
+
+            if last_bar_time is None and bar_age > max_initial_bar_age:
+                print(
+                    f"Latest {SYMBOL} bar is stale at startup: bar_time={bar_time}, "
+                    f"age={bar_age}. Waiting for a fresh bar..."
+                )
+                time.sleep(30)
+                continue
 
             # 2. Check if we are looking at a stale bar (e.g., yesterday's close)
             if last_bar_time is not None and bar_time <= last_bar_time:
@@ -203,7 +220,7 @@ def live_paper_loop(
                 active_entry_bar_time = None
 
             # 4. Run Model
-            side, qty, tp, sl = decide_trade_from_model(
+            side, qty, tp, sl, decision_reason = decide_trade_from_model(
                 model=model,
                 scaler=scaler,
                 df_raw=df,
@@ -222,8 +239,20 @@ def live_paper_loop(
                 )
                 if order:
                     active_entry_bar_time = bar_time
+                    post_trade_equity = get_account_equity()
+                    now_utc = pd.Timestamp.now(tz="UTC").isoformat()
+                    if post_trade_equity is not None:
+                        print(
+                            f"[EQUITY] time={now_utc} after_order side={side} "
+                            f"qty={qty} equity={post_trade_equity:.2f}"
+                        )
+                    else:
+                        print(
+                            f"[EQUITY] time={now_utc} after_order side={side} "
+                            f"qty={qty} equity_unavailable"
+                        )
             else:
-                print("No signal generated for this bar.")
+                print(f"No order submitted for this bar: {decision_reason}")
                 active_entry_bar_time = None
 
         except Exception as e:
