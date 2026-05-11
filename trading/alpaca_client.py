@@ -115,8 +115,9 @@ def submit_stock_bracket_order(
                 stop_loss={"stop_price": round(float(stop_price), 2)},
             )
         )
+        now_utc = datetime.now(timezone.utc).isoformat()
         print(
-            f"[ORDER] {side.upper()} {symbol} qty={qty} "
+            f"[ORDER] time={now_utc} {side.upper()} {symbol} qty={qty} "
             f"tp={target_price:.2f} sl={stop_price:.2f}"
         )
         return order

@@ -78,7 +78,7 @@ def sample_return_distribution(
     return float(np.median(unscaled_close_paths)), float(np.std(unscaled_close_paths))
 
 
-def derive_trade_plan(
+def evaluate_trade_plan(
     *,
     mu: float,
     sigma: float,
@@ -89,7 +89,7 @@ def derive_trade_plan(
     risk_pct: float,
     momentum_weight: float,
     stop_multiplier: float = LIVE_STOP_MULTIPLIER,
-) -> Optional[TradePlan]:
+) -> Tuple[Optional[TradePlan], str]:
     # Express momentum in percentage terms so CLI changes to momentum_weight have a real effect.
     momentum_pct = 0.0 if ema_val == 0 else ((current_price - ema_val) / (ema_val + 1e-9)) * 100.0
     momentum_bias = float(np.tanh(momentum_pct * momentum_weight))
@@ -111,14 +111,24 @@ def derive_trade_plan(
     signal_to_noise = abs(mu) / sigma
 
     if signal_to_noise < SIGNAL_TO_NOISE_THRESHOLD:
-        return None
+        return None, (
+            f"signal_to_noise {signal_to_noise:.3f} < threshold "
+            f"{SIGNAL_TO_NOISE_THRESHOLD:.3f}; mu={mu:.6f}, sigma={sigma:.6f}"
+        )
     if edge_to_stop_ratio < MIN_EDGE_TO_STOP_RATIO:
-        return None
+        return None, (
+            f"edge_to_stop_ratio {edge_to_stop_ratio:.3f} < threshold "
+            f"{MIN_EDGE_TO_STOP_RATIO:.3f}; predicted_move={predicted_move:.4f}, "
+            f"stop_distance={stop_distance:.4f}"
+        )
 
     side = "buy" if predicted_close > current_price else "sell"
     trend_side = "buy" if current_price >= ema_val else "sell"
     if REQUIRE_TREND_CONFIRMATION and side != trend_side:
-        return None
+        return None, (
+            f"trend confirmation failed; model_side={side}, trend_side={trend_side}, "
+            f"price={current_price:.2f}, ema={ema_val:.2f}"
+        )
 
     confidence_discount = float(
         np.clip(signal_to_noise / (SIGNAL_TO_NOISE_THRESHOLD * 2.0), 0.05, 1.0)
@@ -134,11 +144,14 @@ def derive_trade_plan(
         qty = 1
 
     if qty <= 0:
-        return None
+        return None, (
+            f"quantity rounded to zero; adjusted_risk={adjusted_risk:.2f}, "
+            f"stop_distance={stop_distance:.4f}"
+        )
 
     qty = min(qty, 2_000)
     if qty <= 0:
-        return None
+        return None, "quantity cap produced zero quantity"
 
     if side == "buy":
         target_price = current_price + stop_distance * 2.0
@@ -147,17 +160,46 @@ def derive_trade_plan(
         target_price = current_price - stop_distance * 2.0
         stop_price = current_price + stop_distance
 
-    return TradePlan(
+    return (
+        TradePlan(
+            mu=mu,
+            sigma=sigma,
+            predicted_close=float(predicted_close),
+            confidence_discount=confidence_discount,
+            signal_to_noise=signal_to_noise,
+            edge_to_stop_ratio=edge_to_stop_ratio,
+            stop_distance=stop_distance,
+            qty=qty,
+            side=side,
+            target_price=float(target_price),
+            stop_price=float(stop_price),
+            current_price=current_price,
+        ),
+        "accepted",
+    )
+
+
+def derive_trade_plan(
+    *,
+    mu: float,
+    sigma: float,
+    current_price: float,
+    recent_closes: pd.Series,
+    ema_val: float,
+    equity: float,
+    risk_pct: float,
+    momentum_weight: float,
+    stop_multiplier: float = LIVE_STOP_MULTIPLIER,
+) -> Optional[TradePlan]:
+    trade_plan, _ = evaluate_trade_plan(
         mu=mu,
         sigma=sigma,
-        predicted_close=float(predicted_close),
-        confidence_discount=confidence_discount,
-        signal_to_noise=signal_to_noise,
-        edge_to_stop_ratio=edge_to_stop_ratio,
-        stop_distance=stop_distance,
-        qty=qty,
-        side=side,
-        target_price=float(target_price),
-        stop_price=float(stop_price),
         current_price=current_price,
+        recent_closes=recent_closes,
+        ema_val=ema_val,
+        equity=equity,
+        risk_pct=risk_pct,
+        momentum_weight=momentum_weight,
+        stop_multiplier=stop_multiplier,
     )
+    return trade_plan
