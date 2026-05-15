@@ -137,7 +137,11 @@ def evaluate_trade_plan(
     confidence_discount *= 1 + abs(momentum_bias) * 0.25
 
     adjusted_risk = equity * risk_pct * confidence_discount
-    adjusted_risk = min(adjusted_risk, MAX_POSITION_NOTIONAL)
+    
+    # Scale MAX_POSITION_NOTIONAL with current equity (instead of using a fixed cap)
+    # This allows position sizing to grow as account grows
+    dynamic_position_cap = MAX_POSITION_NOTIONAL * (equity / 10_000.0)
+    adjusted_risk = min(adjusted_risk, dynamic_position_cap)
 
     qty = int(adjusted_risk / stop_distance)
     if qty <= 0 and adjusted_risk >= stop_distance * 0.1:
