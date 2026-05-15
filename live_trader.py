@@ -212,7 +212,19 @@ def live_paper_loop(
             last_bar_time = bar_time
 
             # 3. Handle Account & Positions
-            equity = get_account_equity() or starting_equity
+            account_equity = get_account_equity()
+            if account_equity is None:
+                print("Account equity unavailable; skipping this bar to avoid unsafe sizing.")
+                time.sleep(10)
+                continue
+            if account_equity <= 0:
+                print(
+                    f"Account equity reported as {account_equity:.2f}; "
+                    "skipping this bar and refusing to size new trades."
+                )
+                time.sleep(60)
+                continue
+            equity = account_equity
             
             if active_entry_bar_time is not None and has_open_position(SYMBOL):
                 print(f"Closing position from previous bar {active_entry_bar_time}")
