@@ -36,11 +36,16 @@ DEFAULT_NUM_SAMPLES = 64
 MIN_LOCAL_VOL = 0.5        # minimum $ volatility used for stop sizing
 MAX_POSITION_NOTIONAL = 5_000.0  # cap per-trade notional exposure
 CONFIDENCE_THRESHOLD = 0.05       # minimum abs(mu) in scaled space to trade
-SIGNAL_TO_NOISE_THRESHOLD = 1.0   # minimum |forecast_mu| / forecast_sigma to trade
-MIN_EDGE_TO_STOP_RATIO = 1.0     # required expected move divided by stop distance
+SIGNAL_TO_NOISE_THRESHOLD = 0.75   # minimum |forecast_mu| / forecast_sigma to trade
+MIN_EDGE_TO_STOP_RATIO = 1.10     # required expected move divided by stop distance
 REQUIRE_TREND_CONFIRMATION = True
+
+# ----------------------- CURRENT OPTIMAL SETTINGS 
+# Confidence threshold = 0.05
+# sig to noise threshold = 1.50
+# mid edge to stop ratio = 1.25
 
 # Live paper trading
 LIVE_RISK_PCT = DEFAULT_RISK_PCT
-LIVE_STOP_MULTIPLIER = 1.00   # set to 1.5 when actually using fraction of recent volatility
+LIVE_STOP_MULTIPLIER = 1.00
 LIVE_BAR_TIMEFRAME_MIN = 5
