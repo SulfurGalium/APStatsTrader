@@ -93,17 +93,79 @@ def get_latest_stock_price(symbol: str) -> Optional[float]:
     return None
 
 
+def get_account_equity() -> Optional[float]:
+    """
+    Return current account equity when available.
+    """
+    try:
+        account = get_trading_client().get_account()
+        return float(account.equity)
+    except Exception as exc:
+        print(f"Could not fetch account equity: {exc}")
+        return None
+
+
+def get_account_buying_power() -> Optional[float]:
+    """
+    Return current account buying power when available.
+    For margin accounts, this includes available margin.
+    """
+    try:
+        account = get_trading_client().get_account()
+        return float(account.buying_power)
+    except Exception as exc:
+        print(f"Could not fetch account buying power: {exc}")
+        return None
+
+
 def submit_stock_bracket_order(
     symbol: str,
     side: str,
     qty: int,
     target_price: float,
     stop_price: float,
+    current_price: Optional[float] = None,
 ):
     """
     Submit a paper-trading stock bracket order via Alpaca TradingClient.
+    Validates buying power before submission to avoid rejections.
     """
     try:
+        # Get current price if not provided
+        if current_price is None:
+            current_price = get_latest_stock_price(symbol)
+        
+        if current_price is None:
+            print(f"Error: Could not get current price for {symbol}")
+            return None
+        
+        # Get available buying power
+        available_bp = get_account_buying_power()
+        if available_bp is None:
+            print("Error: Could not get buying power")
+            return None
+        
+        notional = qty * current_price
+        
+        # For SELL orders, Alpaca requires ~50% margin
+        # For BUY orders, Alpaca requires 100% of notional
+        margin_multiplier = 0.5 if side == "sell" else 1.0
+        required_bp = notional * margin_multiplier
+        
+        # Add 10% safety buffer
+        required_bp_with_buffer = required_bp * 1.1
+        
+        if required_bp_with_buffer > available_bp:
+            print(
+                f"[VALIDATION] Insufficient buying power for {side.upper()} {qty} shares @ ${current_price:.2f}"
+                f"\n  Notional: ${notional:.2f}"
+                f"\n  Required BP: ${required_bp:.2f} (margin * {margin_multiplier})"
+                f"\n  With 10% buffer: ${required_bp_with_buffer:.2f}"
+                f"\n  Available BP: ${available_bp:.2f}"
+                f"\n  Shortfall: ${required_bp_with_buffer - available_bp:.2f}"
+            )
+            return None
+        
         order = get_trading_client().submit_order(
             MarketOrderRequest(
                 symbol=symbol,
@@ -123,18 +185,6 @@ def submit_stock_bracket_order(
         return order
     except Exception as exc:
         print(f"Error placing stock bracket order: {exc}")
-        return None
-
-
-def get_account_equity() -> Optional[float]:
-    """
-    Return current account equity when available.
-    """
-    try:
-        account = get_trading_client().get_account()
-        return float(account.equity)
-    except Exception as exc:
-        print(f"Could not fetch account equity: {exc}")
         return None
 
 
