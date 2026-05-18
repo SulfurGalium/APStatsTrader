@@ -153,9 +153,20 @@ def evaluate_trade_plan(
             f"stop_distance={stop_distance:.4f}"
         )
 
-    qty = min(qty, 2_000)
+    # Dynamic position cap based on current price and account equity
+    # For SELL: requires ~50% margin, so max qty = equity * 0.5 / price * 0.9 (safety margin)
+    # For BUY: requires 100% notional, so max qty = equity / price * 0.9 (safety margin)
+    margin_multiplier = 0.5 if side == "sell" else 1.0
+    safety_buffer = 0.9  # Leave 10% buffer for safety
+    dynamic_max_qty = int((equity * safety_buffer / (current_price * margin_multiplier)))
+    
+    qty = min(qty, dynamic_max_qty)
+    
     if qty <= 0:
-        return None, "quantity cap produced zero quantity"
+        return None, (
+            f"quantity capped to zero by available capital; "
+            f"dynamic_max_qty={dynamic_max_qty}, equity={equity:.2f}, price={current_price:.2f}"
+        )
 
     if side == "buy":
         target_price = current_price + stop_distance * 2.0
